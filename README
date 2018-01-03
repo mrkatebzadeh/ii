@@ -80,6 +80,15 @@ Then connect:
 	./irc -n nick -u name -s 127.0.0.1 -p 6669
 
 
+UCSPI support
+-------------
+
+Passing the '-t' option to ii starts it in UCSPI mode, where it assumes it is 
+running as the child of an UCSPI client program such as tcpserver or 
+s6-tcpserver and that it can read and write to the network on file descriptors 6
+and 7 respectively. In this mode of operation, the '-s' switch only sets the 
+server name as it appears in ~/irc.
+
 Configuration
 -------------
 No configuration is needed.
