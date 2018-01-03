@@ -20,6 +20,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#define READ_FD 6
+#define WRITE_FD 7
+
 char *argv0;
 
 #include "arg.h"
@@ -65,7 +68,7 @@ static void      proc_channels_input(int, Channel *, char *);
 static void      proc_channels_privmsg(int, Channel *, char *);
 static void      proc_server_cmd(int, char *);
 static int       read_line(int, char *, size_t);
-static void      run(int, const char *);
+static void      run(int, int, const char *);
 static void      setup(void);
 static void      sighandler(int);
 static int       tcpopen(const char *, const char *);
@@ -85,7 +88,7 @@ static char     msg[IRC_MSG_MAX];  /* message buf used for communication */
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: %s <-s host> [-i <irc dir>] [-p <port>] "
+	fprintf(stderr, "usage: %s <-s host> [-t] [-i <irc dir>] [-p <port>] "
 	        "[-u <sockname>] [-n <nick>] [-k <password>] "
 	        "[-f <fullname>]\n", argv0);
 	exit(1);
@@ -721,7 +724,7 @@ setup(void)
 }
 
 static void
-run(int ircfd, const char *host)
+run(int ircinfd, int ircoutfd, const char *host)
 {
 	Channel *c, *tmp;
 	fd_set rdset;
@@ -731,9 +734,9 @@ run(int ircfd, const char *host)
 
 	snprintf(ping_msg, sizeof(ping_msg), "PING %s\r\n", host);
 	while (isrunning) {
-		maxfd = ircfd;
+                maxfd = ircinfd > ircoutfd ? ircinfd : ircoutfd;
 		FD_ZERO(&rdset);
-		FD_SET(ircfd, &rdset);
+		FD_SET(ircinfd, &rdset);
 		for (c = channels; c; c = c->next) {
 			if (c->fdin > maxfd)
 				maxfd = c->fdin;
@@ -752,17 +755,17 @@ run(int ircfd, const char *host)
 				channel_print(channelmaster, "-!- ii shutting down: ping timeout");
 				exit(2); /* status code 2 for timeout */
 			}
-			ewritestr(ircfd, ping_msg);
+			ewritestr(ircoutfd, ping_msg);
 			continue;
 		}
-		if (FD_ISSET(ircfd, &rdset)) {
-			handle_server_output(ircfd);
+		if (FD_ISSET(ircinfd, &rdset)) {
+			handle_server_output(ircinfd);
 			last_response = time(NULL);
 		}
 		for (c = channels; c; c = tmp) {
 			tmp = c->next;
 			if (FD_ISSET(c->fdin, &rdset))
-				handle_channels_input(ircfd, c);
+				handle_channels_input(ircoutfd, c);
 		}
 	}
 }
@@ -775,7 +778,8 @@ main(int argc, char *argv[])
 	const char *key = NULL, *fullname = NULL, *host = "";
 	const char *uds = NULL, *service = "6667";
 	char prefix[PATH_MAX];
-	int ircfd, r;
+        int ircinfd, ircoutfd, r;
+        int ucspi = 0;
 
 	/* use nickname and home dir of user by default */
 	if (!(spw = getpwuid(getuid()))) {
@@ -806,7 +810,10 @@ main(int argc, char *argv[])
 		break;
 	case 'u':
 		uds = EARGF(usage());
-		break;
+                break;
+        case 't':
+                ucspi = 1;
+                break;
 	default:
 		usage();
 		break;
@@ -816,9 +823,12 @@ main(int argc, char *argv[])
 		usage();
 
 	if (uds)
-		ircfd = udsopen(uds);
-	else
-		ircfd = tcpopen(host, service);
+                ircinfd = ircoutfd = udsopen(uds);
+        else if (ucspi) {
+                ircinfd = READ_FD;
+                ircoutfd = WRITE_FD;
+        } else
+		ircinfd = ircoutfd = tcpopen(host, service);
 
 #ifdef __OpenBSD__
 	/* OpenBSD pledge(2) support */
@@ -837,10 +847,10 @@ main(int argc, char *argv[])
 
 	channelmaster = channel_add(""); /* master channel */
 	if (key)
-		loginkey(ircfd, key);
-	loginuser(ircfd, host, fullname && *fullname ? fullname : nick);
+		loginkey(ircoutfd, key);
+	loginuser(ircoutfd, host, fullname && *fullname ? fullname : nick);
 	setup();
-	run(ircfd, host);
+	run(ircinfd, ircoutfd, host);
 	if (channelmaster)
 		channel_leave(channelmaster);
 
