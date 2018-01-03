@@ -31,17 +31,25 @@ char *argv0;
 size_t strlcpy(char *, const char *, size_t);
 
 #define IRC_CHANNEL_MAX   200
+#define IRC_NICK_MAX      200
 #define IRC_MSG_MAX       512 /* quaranteed to be <= than PIPE_BUF */
 #define PING_TIMEOUT      300
 
 enum { TOK_NICKSRV = 0, TOK_USER, TOK_CMD, TOK_CHAN, TOK_ARG, TOK_TEXT, TOK_LAST };
+
+typedef struct Nick Nick;
+struct Nick {
+	char name[IRC_NICK_MAX];
+	Nick *next;
+};
 
 typedef struct Channel Channel;
 struct Channel {
 	int fdin;
 	char name[IRC_CHANNEL_MAX]; /* channel name (normalized) */
 	char inpath[PATH_MAX];      /* input path */
-	char outpath[PATH_MAX];     /* output path */
+        char outpath[PATH_MAX];     /* output path */
+        Nick *nicks;
 	Channel *next;
 };
 
@@ -49,6 +57,7 @@ static Channel * channel_add(const char *);
 static Channel * channel_find(const char *);
 static Channel * channel_join(const char *);
 static void      channel_leave(Channel *);
+static Channel * channel_lookup(const char *);
 static Channel * channel_new(const char *);
 static void      channel_normalize_name(char *);
 static void      channel_normalize_path(char *);
@@ -64,8 +73,13 @@ static void      handle_server_output(int);
 static int       isnumeric(const char *);
 static void      loginkey(int, const char *);
 static void      loginuser(int, const char *, const char *);
+static void      name_add(const char *, const char *);
+static void      name_nick(const char *, const char *);
+static void      name_quit(const char *, const char *, const char *);
+static int       name_rm(const char *, const char *);
 static void      proc_channels_input(int, Channel *, char *);
 static void      proc_channels_privmsg(int, Channel *, char *);
+static void      proc_names(const char *, char *);
 static void      proc_server_cmd(int, char *);
 static int       read_line(int, char *, size_t);
 static void      run(int, int, const char *);
@@ -279,7 +293,8 @@ channel_add(const char *name)
 	} else {
 		c->next = channels;
 		channels = c;
-	}
+        }
+        c->nicks = NULL;
 	return c;
 }
 
@@ -296,7 +311,8 @@ channel_join(const char *name)
 static void
 channel_rm(Channel *c)
 {
-	Channel *p;
+        Channel *p;
+        Nick *n, *nn;
 
 	if (channels == c) {
 		channels = channels->next;
@@ -305,8 +321,14 @@ channel_rm(Channel *c)
 			;
 		if (p && p->next == c)
 			p->next = c->next;
-	}
-	free(c);
+        }
+
+        for (n = c->nicks; n; n = nn) {
+                nn = n->next;
+                free(n);
+        }
+
+        free(c);
 }
 
 static void
@@ -319,6 +341,15 @@ channel_leave(Channel *c)
 	/* remove "in" file on leaving the channel */
 	unlink(c->inpath);
 	channel_rm(c);
+}
+
+static Channel*
+channel_lookup(const char *name) {
+        Channel *c;
+	for(c = channels; c; c = c->next)
+		if(!strcmp(name, c->name))
+			return c;
+	return NULL;
 }
 
 static void
@@ -335,6 +366,74 @@ loginuser(int ircfd, const char *host, const char *fullname)
 	         nick, nick, host, fullname);
 	puts(msg);
 	ewritestr(ircfd, msg);
+}
+
+static void
+name_add(const char *chan, const char *name) {
+        Channel *c;
+        Nick *n;
+
+        if(!(c = channel_lookup(chan)))
+                return;
+
+        for(n = c->nicks; n; n = n->next)
+                if(!strcmp(name, n->name))
+                        return;
+
+        if (!(n = calloc(1, sizeof(Nick)))) {
+		fprintf(stderr, "%s: calloc: %s\n", argv0, strerror(errno));
+		exit(1);
+	}
+        
+        strlcpy(n->name, name, sizeof(name));
+	n->next = c->nicks;
+	c->nicks = n;
+}
+
+static int
+name_rm(const char *chan, const char *name) {
+	Channel *c;
+	Nick *n, *pn = NULL;
+
+        if(!(c = channel_lookup(chan)))
+                return 0;
+
+        for(n = c->nicks; n; pn = n, n = n->next) {
+		if(!strcmp(name, n->name)) {
+                        if(pn)
+                                pn->next = n->next;
+                        else
+                                c->nicks = n->next;
+			free(n);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void
+name_quit(const char *name, const char *user, const char *text) {
+	Channel *c;
+
+        for(c = channels; c; c = c->next) {
+		if(c->name && name_rm(c->name, name)) {
+			snprintf(msg, sizeof(msg), "-!- %s(%s) has quit \"%s\"", name, user, text ? text : "");
+			channel_print(c, msg);
+		}
+	}
+}
+
+static void
+name_nick(const char *old, const char *new) {
+	Channel *c;
+
+        for(c = channels; c; c = c->next) {
+		if(c->name && name_rm(c->name, old)) {
+			name_add(c->name, new);
+			snprintf(msg, sizeof(msg), "-!- %s changed nick to \"%s\"", old, new);
+			channel_print(c, msg);
+		}
+	}
 }
 
 static int
@@ -588,10 +687,18 @@ proc_server_cmd(int fd, char *buf)
 	tokenize(&argv[TOK_CMD], TOK_LAST - TOK_CMD, cmd, ' ');
 
 	if (!argv[TOK_CMD] || !strcmp("PONG", argv[TOK_CMD])) {
-		return;
+                return;                
 	} else if (!strcmp("PING", argv[TOK_CMD])) {
 		snprintf(msg, sizeof(msg), "PONG %s\r\n", argv[TOK_TEXT]);
 		ewritestr(fd, msg);
+                return;
+	} else if(!strncmp("353", argv[TOK_CMD], 4)) {
+		p = strtok(argv[TOK_ARG]," ");
+		if(!(p = strtok(NULL," ")))
+			return;
+		snprintf(msg, sizeof(msg), "%s%s", argv[TOK_ARG] ? argv[TOK_ARG] : "", argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                channel_print(channelmaster, msg);
+		proc_names(p, argv[TOK_TEXT]);
 		return;
 	} else if (!argv[TOK_NICKSRV] || !argv[TOK_USER]) {
 		/* server command */
@@ -605,12 +712,14 @@ proc_server_cmd(int fd, char *buf)
 				argv[TOK_TEXT] ? argv[TOK_TEXT] : "unknown");
 	else if (!strcmp("JOIN", argv[TOK_CMD]) && (argv[TOK_CHAN] || argv[TOK_TEXT])) {
 		if (argv[TOK_TEXT])
-			argv[TOK_CHAN] = argv[TOK_TEXT];
-		snprintf(msg, sizeof(msg), "-!- %s(%s) has joined %s",
-				argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
-	} else if (!strcmp("PART", argv[TOK_CMD]) && argv[TOK_CHAN]) {
-		snprintf(msg, sizeof(msg), "-!- %s(%s) has left %s",
-				argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
+                        argv[TOK_CHAN] = argv[TOK_TEXT];
+                snprintf(msg, sizeof(msg), "-!- %s(%s) has joined %s",
+                         argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
+                name_add(argv[TOK_CHAN], argv[TOK_NICKSRV]);
+        } else if (!strcmp("PART", argv[TOK_CMD]) && argv[TOK_CHAN]) {
+                snprintf(msg, sizeof(msg), "-!- %s(%s) has left %s",
+                         argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
+                name_rm(argv[TOK_CHAN], argv[TOK_NICKSRV]);
 		/* if user itself leaves, don't write to channel (don't reopen channel). */
 		if (!strcmp(argv[TOK_NICKSRV], nick))
 			return;
@@ -623,15 +732,18 @@ proc_server_cmd(int fd, char *buf)
 	} else if (!strcmp("QUIT", argv[TOK_CMD])) {
 		snprintf(msg, sizeof(msg), "-!- %s(%s) has quit \"%s\"",
 				argv[TOK_NICKSRV], argv[TOK_USER],
-				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                                argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                name_quit(argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_TEXT]);
 	} else if (!strncmp("NICK", argv[TOK_CMD], 5) && argv[TOK_TEXT] &&
 	          !strcmp(_nick, argv[TOK_TEXT])) {
 		strlcpy(nick, _nick, sizeof(nick));
 		snprintf(msg, sizeof(msg), "-!- changed nick to \"%s\"", nick);
-		channel_print(channelmaster, msg);
+                channel_print(channelmaster, msg);
+                name_nick(argv[TOK_NICKSRV], argv[TOK_TEXT]);
 	} else if (!strcmp("NICK", argv[TOK_CMD]) && argv[TOK_TEXT]) {
 		snprintf(msg, sizeof(msg), "-!- %s changed nick to %s",
-				argv[TOK_NICKSRV], argv[TOK_TEXT]);
+                         argv[TOK_NICKSRV], argv[TOK_TEXT]);
+                name_nick(argv[TOK_NICKSRV], argv[TOK_TEXT]);
 	} else if (!strcmp("TOPIC", argv[TOK_CMD])) {
 		snprintf(msg, sizeof(msg), "-!- %s changed topic to \"%s\"",
 				argv[TOK_NICKSRV],
@@ -639,7 +751,8 @@ proc_server_cmd(int fd, char *buf)
 	} else if (!strcmp("KICK", argv[TOK_CMD]) && argv[TOK_ARG]) {
 		snprintf(msg, sizeof(msg), "-!- %s kicked %s (\"%s\")",
 				argv[TOK_NICKSRV], argv[TOK_ARG],
-				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                                argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                name_rm(argv[TOK_CHAN], argv[TOK_NICKSRV]);
 	} else if (!strcmp("NOTICE", argv[TOK_CMD])) {
 		snprintf(msg, sizeof(msg), "-!- \"%s\")",
 				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
@@ -660,6 +773,19 @@ proc_server_cmd(int fd, char *buf)
 		c = channel_join(channel);
 	if (c)
 		channel_print(c, msg);
+}
+
+static void
+proc_names(const char *chan, char *names) {
+	char *p;
+
+        if(!(p = strtok(names," ")))
+                return;
+	do {
+		if(*p == '@' || *p == '+')
+			p++;
+		name_add(chan,p);
+	} while((p = strtok(NULL," ")));
 }
 
 static int
