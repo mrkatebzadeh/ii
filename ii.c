@@ -69,7 +69,7 @@ static void      create_dirtree(const char *);
 static void      create_filepath(char *, size_t, const char *, const char *, const char *);
 static void      ewritestr(int, const char *);
 static void      handle_channels_input(int, Channel *);
-static void      handle_server_output(int);
+static void      handle_server_output(int, int);
 static int       isnumeric(const char *);
 static void      loginkey(int, const char *);
 static void      loginuser(int, const char *, const char *);
@@ -820,18 +820,18 @@ handle_channels_input(int ircfd, Channel *c)
 }
 
 static void
-handle_server_output(int ircfd)
+handle_server_output(int infd, int outfd)
 {
 	char buf[IRC_MSG_MAX];
 
-	if (read_line(ircfd, buf, sizeof(buf)) == -1) {
+	if (read_line(infd, buf, sizeof(buf)) == -1) {
 		fprintf(stderr, "%s: remote host closed connection: %s\n",
 		        argv0, strerror(errno));
 		exit(1);
 	}
 	fprintf(stdout, "%lu %s\n", (unsigned long)time(NULL), buf);
 	fflush(stdout);
-	proc_server_cmd(ircfd, buf);
+	proc_server_cmd(outfd, buf);
 }
 
 static void
@@ -888,7 +888,7 @@ run(int ircinfd, int ircoutfd, const char *host)
 			continue;
 		}
 		if (FD_ISSET(ircinfd, &rdset)) {
-			handle_server_output(ircinfd);
+			handle_server_output(ircinfd, ircoutfd);
 			last_response = time(NULL);
 		}
 		for (c = channels; c; c = tmp) {
