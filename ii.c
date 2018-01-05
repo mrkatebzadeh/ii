@@ -782,6 +782,7 @@ proc_server_cmd(int fd, char *buf)
 				argv[TOK_NICKSRV], argv[TOK_USER],
                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
                 name_quit(argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_TEXT]);
+                return;
 	} else if (!strncmp("NICK", argv[TOK_CMD], 5) && argv[TOK_TEXT] &&
 	          !strcmp(_nick, argv[TOK_TEXT])) {
 		strlcpy(nick, _nick, sizeof(nick));
@@ -792,6 +793,7 @@ proc_server_cmd(int fd, char *buf)
 		snprintf(msg, sizeof(msg), "-!- %s changed nick to %s",
                          argv[TOK_NICKSRV], argv[TOK_TEXT]);
                 name_nick(argv[TOK_NICKSRV], argv[TOK_TEXT]);
+                return;
 	} else if (!strcmp("TOPIC", argv[TOK_CMD])) {
 		snprintf(msg, sizeof(msg), "-!- %s changed topic to \"%s\"",
 				argv[TOK_NICKSRV],
