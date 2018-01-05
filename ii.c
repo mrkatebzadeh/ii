@@ -617,8 +617,10 @@ proc_channels_input(int ircfd, Channel *c, char *buf)
 				snprintf(msg, sizeof(msg), "PART %s :%s\r\n", c->name, &buf[3]);
 			else
 				snprintf(msg, sizeof(msg),
-				         "PART %s :leaving\r\n", c->name);
-			ewritestr(ircfd, msg);
+                                         "PART %s :leaving\r\n", c->name);
+                        if ((buf[3] == '#') || (buf[3] == '&') ||
+                            (buf[3] == '+') || (buf[3] == '!'))
+                                ewritestr(ircfd, msg);
 			channel_leave(c);
 			return;
 			break;
