@@ -74,6 +74,7 @@ static int       isnumeric(const char *);
 static void      loginkey(int, const char *);
 static void      loginuser(int, const char *, const char *);
 static void      name_add(const char *, const char *);
+static void      name_menick(const char *, const char *);
 static void      name_nick(const char *, const char *);
 static void      name_quit(const char *, const char *, const char *);
 static int       name_rm(const char *, const char *);
@@ -440,6 +441,20 @@ name_nick(const char *old, const char *new) {
 	}
 }
 
+static void
+        name_menick(const char* old, const char *new) {
+	Channel *c;
+
+        snprintf(msg, sizeof(msg), "-!- changed nick to \"%s\"", new);
+
+        for(c = channels; c; c = c->next) {
+		if(c->name && name_rm(c->name, old)) {
+			name_add(c->name, new);
+		}
+                channel_print(c, msg);
+        }
+}
+
 static int
 udsopen(const char *uds)
 {
@@ -773,7 +788,7 @@ proc_server_cmd(int fd, char *buf)
 		strlcpy(nick, _nick, sizeof(nick));
 		snprintf(msg, sizeof(msg), "-!- changed nick to \"%s\"", nick);
                 channel_print(channelmaster, msg);
-                name_nick(argv[TOK_NICKSRV], argv[TOK_TEXT]);
+                name_menick(argv[TOK_NICKSRV], argv[TOK_TEXT]);
 	} else if (!strcmp("NICK", argv[TOK_CMD]) && argv[TOK_TEXT]) {
 		snprintf(msg, sizeof(msg), "-!- %s changed nick to %s",
                          argv[TOK_NICKSRV], argv[TOK_TEXT]);
