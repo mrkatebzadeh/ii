@@ -562,7 +562,8 @@ proc_channels_privmsg(int ircfd, Channel *c, char *buf)
 static void
 proc_channels_input(int ircfd, Channel *c, char *buf)
 {
-	char *p = NULL;
+        Channel * tmp;
+        char *p = NULL;
 	size_t buflen;
 
 	if (buf[0] != '/' && buf[0] != '\0') {
@@ -623,8 +624,19 @@ proc_channels_input(int ircfd, Channel *c, char *buf)
 				snprintf(msg, sizeof(msg),
                                          "PART %s :leaving\r\n", c->name);
                         if ((buf[3] == '#') || (buf[3] == '&') ||
-                            (buf[3] == '+') || (buf[3] == '!'))
-                                ewritestr(ircfd, msg);
+                            (buf[3] == '+') || (buf[3] == '!')) {
+                                    ewritestr(ircfd, msg);
+                                    if (buflen >= 3) {
+                                            snprintf(msg, sizeof(msg),
+                                                     "-!- Leaving %s: \"%s\"\n",
+                                                     c->name, &buf[3]);
+                                    } else {
+                                            snprintf(msg, sizeof(msg),
+                                                     "-!- Leaving %s: \"leaving\"\n",
+                                                     c->name);
+                                    }
+                                    channel_print(c, msg);
+                        }
 			channel_leave(c);
 			return;
 			break;
@@ -634,7 +646,19 @@ proc_channels_input(int ircfd, Channel *c, char *buf)
 			else
 				snprintf(msg, sizeof(msg),
 				         "QUIT %s\r\n", "bye");
-			ewritestr(ircfd, msg);
+                        ewritestr(ircfd, msg);
+
+			if (buflen >= 3)
+                                snprintf(msg, sizeof(msg), "-!- Quitting: %s\n", &buf[3]);
+			else
+				snprintf(msg, sizeof(msg),
+                                         "-!- Quitting: %s\n", "bye");
+                        
+                        for (c = channelmaster; c; c = tmp) {
+                                tmp = c->next;
+                                channel_print(c, msg);
+                        }
+                        
 			isrunning = 0;
 			return;
 			break;
