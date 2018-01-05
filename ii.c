@@ -643,11 +643,11 @@ proc_channels_input(int ircfd, Channel *c, char *buf)
                                     ewritestr(ircfd, msg);
                                     if (buflen >= 3) {
                                             snprintf(msg, sizeof(msg),
-                                                     "-!- Leaving %s: \"%s\"\n",
+                                                     "-!- Leaving %s: \"%s\"",
                                                      c->name, &buf[3]);
                                     } else {
                                             snprintf(msg, sizeof(msg),
-                                                     "-!- Leaving %s: \"leaving\"\n",
+                                                     "-!- Leaving %s: \"leaving\"",
                                                      c->name);
                                     }
                                     channel_print(c, msg);
@@ -664,12 +664,11 @@ proc_channels_input(int ircfd, Channel *c, char *buf)
                         ewritestr(ircfd, msg);
 
 			if (buflen >= 3)
-                                snprintf(msg, sizeof(msg), "-!- Quitting: %s\n", &buf[3]);
+                                snprintf(msg, sizeof(msg), "-!- Quitting: %s", &buf[3]);
 			else
 				snprintf(msg, sizeof(msg),
-                                         "-!- Quitting: %s\n", "bye");
+                                         "-!- Quitting: %s", "bye");
 
-                        channel_print(channelmaster, msg);
                         for (c = channels; c; c = tmp) {
                                 tmp = c->next;
                                 channel_print(c, msg);
@@ -789,6 +788,7 @@ proc_server_cmd(int fd, char *buf)
 		snprintf(msg, sizeof(msg), "-!- changed nick to \"%s\"", nick);
                 channel_print(channelmaster, msg);
                 name_menick(argv[TOK_NICKSRV], argv[TOK_TEXT]);
+                return;
 	} else if (!strcmp("NICK", argv[TOK_CMD]) && argv[TOK_TEXT]) {
 		snprintf(msg, sizeof(msg), "-!- %s changed nick to %s",
                          argv[TOK_NICKSRV], argv[TOK_TEXT]);
