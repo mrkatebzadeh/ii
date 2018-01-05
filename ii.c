@@ -384,8 +384,12 @@ name_add(const char *chan, const char *name) {
 		fprintf(stderr, "%s: calloc: %s\n", argv0, strerror(errno));
 		exit(1);
 	}
+
+        if ((*name == '~') || (*name == '&') || (*name == '@') ||
+            (*name == '%') || (*name == '+')) /* special people get prefix chars */
+                name++;
         
-        strlcpy(n->name, name, sizeof(name));
+        strlcpy(n->name, name, sizeof(n->name));
 	n->next = c->nicks;
 	c->nicks = n;
 }
