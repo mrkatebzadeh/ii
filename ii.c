@@ -653,8 +653,9 @@ proc_channels_input(int ircfd, Channel *c, char *buf)
 			else
 				snprintf(msg, sizeof(msg),
                                          "-!- Quitting: %s\n", "bye");
-                        
-                        for (c = channelmaster; c; c = tmp) {
+
+                        channel_print(channelmaster, msg);
+                        for (c = channels; c; c = tmp) {
                                 tmp = c->next;
                                 channel_print(c, msg);
                         }
@@ -911,7 +912,11 @@ run(int ircinfd, int ircoutfd, const char *host)
 			exit(1);
 		} else if (r == 0) {
 			if (time(NULL) - last_response >= PING_TIMEOUT) {
-				channel_print(channelmaster, "-!- ii shutting down: ping timeout");
+                                channel_print(channelmaster, "-!- ii shutting down: ping timeout");
+                                for (c = channels; c; c = tmp) {
+                                        tmp = c->next;
+                                        channel_print(c, msg);
+                                }
 				exit(2); /* status code 2 for timeout */
 			}
 			ewritestr(ircoutfd, ping_msg);
