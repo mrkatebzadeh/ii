@@ -786,7 +786,6 @@ proc_server_cmd(int fd, char *buf)
 	          !strcmp(_nick, argv[TOK_TEXT])) {
 		strlcpy(nick, _nick, sizeof(nick));
 		snprintf(msg, sizeof(msg), "-!- changed nick to \"%s\"", nick);
-                channel_print(channelmaster, msg);
                 name_menick(argv[TOK_NICKSRV], argv[TOK_TEXT]);
                 return;
 	} else if (!strcmp("NICK", argv[TOK_CMD]) && argv[TOK_TEXT]) {
@@ -927,10 +926,9 @@ run(int ircinfd, int ircoutfd, const char *host)
 			exit(1);
 		} else if (r == 0) {
 			if (time(NULL) - last_response >= PING_TIMEOUT) {
-                                channel_print(channelmaster, "-!- ii shutting down: ping timeout");
                                 for (c = channels; c; c = tmp) {
                                         tmp = c->next;
-                                        channel_print(c, msg);
+                                        channel_print(c, "-!- ii shutting down: ping timeout");
                                 }
 				exit(2); /* status code 2 for timeout */
 			}
