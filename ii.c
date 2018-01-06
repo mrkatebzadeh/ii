@@ -75,7 +75,7 @@ static void      handle_channels_input(int, Channel *);
 static void      handle_server_output(int, int);
 static int       isnumeric(const char *);
 static void      loginkey(int, const char *);
-static void      loginuser(int, const char *, const char *);
+static void      loginuser(int, const char *, const char *, const char *);
 #define name_add(c, n) name_add3((c), (n), '\0')
 static void      name_add3(const char *, const char *, const char);
 static Nick *    name_find(Channel *, const char *);
@@ -119,8 +119,8 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: %s <-s host> [-t] [-i <irc dir>] [-p <port>] "
-	        "[-u <sockname>] [-n <nick>] [-k <password>] "
-	        "[-f <fullname>]\n", argv0);
+                "[-U <sockname>] [-n <nick>] [-k <password>] [-u <username>] "
+                "[-f <fullname>]\n", argv0);
 	exit(1);
 }
 
@@ -367,10 +367,10 @@ loginkey(int ircfd, const char *key)
 }
 
 static void
-loginuser(int ircfd, const char *host, const char *fullname)
+loginuser(int ircfd, const char *host, const char* username, const char *fullname)
 {
 	snprintf(msg, sizeof(msg), "NICK %s\r\nUSER %s localhost %s :%s\r\n",
-	         nick, nick, host, fullname);
+	         nick, username, host, fullname);
 	puts(msg);
 	ewritestr(ircfd, msg);
 }
@@ -1189,8 +1189,8 @@ main(int argc, char *argv[])
 {
 	Channel *c, *tmp;
 	struct passwd *spw;
-	const char *key = NULL, *fullname = NULL, *host = "";
-	const char *uds = NULL, *service = "6667";
+        const char *key = NULL, *username = NULL, *fullname = NULL;
+        const char *host = "", *uds = NULL, *service = "6667";
 	char prefix[PATH_MAX];
         int ircinfd, ircoutfd, r;
         int ucspi = 0;
@@ -1203,6 +1203,8 @@ main(int argc, char *argv[])
 	strlcpy(nick, spw->pw_name, sizeof(nick));
 	snprintf(prefix, sizeof(prefix), "%s/irc", spw->pw_dir);
 
+        username = nick;
+        
 	ARGBEGIN {
 	case 'f':
 		fullname = EARGF(usage());
@@ -1221,8 +1223,11 @@ main(int argc, char *argv[])
 		break;
 	case 's':
 		host = EARGF(usage());
-		break;
-	case 'u':
+                break;
+        case 'u':
+                username = EARGF(usage());
+                break;
+	case 'U':
 		uds = EARGF(usage());
                 break;
         case 't':
@@ -1262,7 +1267,7 @@ main(int argc, char *argv[])
 	channelmaster = channel_add(""); /* master channel */
 	if (key)
 		loginkey(ircoutfd, key);
-	loginuser(ircoutfd, host, fullname && *fullname ? fullname : nick);
+	loginuser(ircoutfd, host, username, fullname && *fullname ? fullname : username);
 	setup();
 	run(ircinfd, ircoutfd, host);
 	if (channelmaster)

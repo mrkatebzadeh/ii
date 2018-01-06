@@ -29,9 +29,11 @@ and ii creates a new channel directory with in and out file.
 .IR prefix ]
 .RB [ \-n
 .IR nickname ]
+.RB [ \-u
+.IR username ]
 .RB [ \-f
 .IR realname ]
-.RB < \-u
+.RB < \-U
 .IR sockname >
 .SH OPTIONS
 .TP
@@ -41,7 +43,7 @@ server to connect to, for example: irc.freenode.net
 .BI \-t
 assume that ii is running under an UCSPI-compatible client instead of making a TCP connection.
 .TP
-.BI \-u " sockname"
+.BI \-U " sockname"
 connect to a UNIX domain socket instead of directly to a server.
 .TP
 .BI \-p " port"
@@ -56,6 +58,9 @@ lets you override the default irc path (~/irc)
 .TP
 .BI \-n " nickname"
 lets you override the default nick ($USER)
+.TP
+.BI \-u " username"
+lets you override the default username ($USER)
 .TP
 .BI \-f " realname"
 lets you specify your real name associated with your nick
