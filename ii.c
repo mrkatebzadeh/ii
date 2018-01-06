@@ -34,12 +34,15 @@ size_t strlcpy(char *, const char *, size_t);
 #define IRC_NICK_MAX      200
 #define IRC_MSG_MAX       512 /* quaranteed to be <= than PIPE_BUF */
 #define PING_TIMEOUT      300
+#define UMODE_MAX          10
+#define CMODE_MAX          50
 
 enum { TOK_NICKSRV = 0, TOK_USER, TOK_CMD, TOK_CHAN, TOK_ARG, TOK_TEXT, TOK_LAST };
 
 typedef struct Nick Nick;
 struct Nick {
-	char name[IRC_NICK_MAX];
+        char name[IRC_NICK_MAX];
+        char prefix;
 	Nick *next;
 };
 
@@ -53,6 +56,7 @@ struct Channel {
 	Channel *next;
 };
 
+static void      cap_parse(char *);
 static Channel * channel_add(const char *);
 static Channel * channel_find(const char *);
 static Channel * channel_join(const char *);
@@ -72,15 +76,22 @@ static void      handle_server_output(int, int);
 static int       isnumeric(const char *);
 static void      loginkey(int, const char *);
 static void      loginuser(int, const char *, const char *);
-static void      name_add(const char *, const char *);
+#define name_add(c, n) name_add3((c), (n), '\0')
+static void      name_add3(const char *, const char *, const char);
+static Nick *    name_find(Channel *, const char *);
 static void      name_menick(const char *, const char *);
+static void      name_mode(const char *, char *);
 static void      name_nick(const char *, const char *);
 static void      name_quit(const char *, const char *, const char *);
 static int       name_rm(const char *, const char *);
+static int       name_rm3(Channel *, const char *, char *);
+static void      parse_cmodes(char *);
+static void      parse_prefix(char *);
 static void      proc_channels_input(int, Channel *, char *);
 static void      proc_channels_privmsg(int, Channel *, char *);
 static void      proc_names(const char *, char *);
 static void      proc_server_cmd(int, char *);
+static int       ptr_split(const char *, const char *, const char *, const char *);
 static int       read_line(int, char *, size_t);
 static void      run(int, int, const char *);
 static void      setup(void);
@@ -98,6 +109,11 @@ static char     nick[32];          /* active nickname at runtime */
 static char     _nick[32];         /* nickname at startup */
 static char     ircpath[PATH_MAX]; /* irc dir (-i) */
 static char     msg[IRC_MSG_MAX];  /* message buf used for communication */
+static char     upref[UMODE_MAX];  /* user prefixes in use on this server */
+static char     umodes[UMODE_MAX]; /* modes corresponding to the prefixes */
+static char     cmodes[CMODE_MAX]; /* channel modes in use on this server */
+
+#define DPRINTF(s) printf s
 
 static void
 usage(void)
@@ -360,7 +376,7 @@ loginuser(int ircfd, const char *host, const char *fullname)
 }
 
 static void
-name_add(const char *chan, const char *name) {
+name_add3(const char *chan, const char *name, const char modes) {
         Channel *c;
         Nick *n;
 
@@ -376,9 +392,12 @@ name_add(const char *chan, const char *name) {
 		exit(1);
 	}
 
-        if ((*name == '~') || (*name == '&') || (*name == '@') ||
-            (*name == '%') || (*name == '+')) /* special people get prefix chars */
+        if (strchr(upref, name[0]) != NULL) { /* special people get prefix chars */
+                n->prefix = name[0];
                 name++;
+        } else {
+                n->prefix = modes;
+        }
         
         strlcpy(n->name, name, sizeof(n->name));
 	n->next = c->nicks;
@@ -406,12 +425,31 @@ name_rm(const char *chan, const char *name) {
 	return 0;
 }
 
+static int
+name_rm3(Channel *c, const char *name, char *prefix) {
+	Nick *n, *pn = NULL;
+
+        for(n = c->nicks; n; pn = n, n = n->next) {
+		if(!strcmp(name, n->name)) {
+                        if(pn)
+                                pn->next = n->next;
+                        else
+                                c->nicks = n->next;
+                        if (prefix)
+                                *prefix = n->prefix;
+			free(n);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static void
 name_quit(const char *name, const char *user, const char *text) {
 	Channel *c;
 
         for(c = channels; c; c = c->next) {
-		if(c->name && name_rm(c->name, name)) {
+		if(c->name && name_rm3(c, name, NULL)) {
 			snprintf(msg, sizeof(msg), "-!- %s(%s) has quit \"%s\"", name, user, text ? text : "");
 			channel_print(c, msg);
 		}
@@ -420,11 +458,12 @@ name_quit(const char *name, const char *user, const char *text) {
 
 static void
 name_nick(const char *old, const char *new) {
-	Channel *c;
+        Channel *c;
+        char tmp;
 
         for(c = channels; c; c = c->next) {
-		if(c->name && name_rm(c->name, old)) {
-			name_add(c->name, new);
+                if(c->name && name_rm3(c, old, &tmp)) {
+			name_add3(c->name, new, tmp);
 			snprintf(msg, sizeof(msg), "-!- %s changed nick to \"%s\"", old, new);
 			channel_print(c, msg);
 		}
@@ -432,17 +471,124 @@ name_nick(const char *old, const char *new) {
 }
 
 static void
-        name_menick(const char* old, const char *new) {
-	Channel *c;
+name_menick(const char* old, const char *new) {
+        Channel *c;
+        char tmp;
 
         snprintf(msg, sizeof(msg), "-!- changed nick to \"%s\"", new);
 
         for(c = channels; c; c = c->next) {
-		if(c->name && name_rm(c->name, old)) {
-			name_add(c->name, new);
+                if(c->name && name_rm3(c, old, &tmp)) {
+			name_add3(c->name, new, tmp);
 		}
                 channel_print(c, msg);
         }
+}
+
+static int
+ptr_split(const char *n, const char *p1, const char *p2, const char *p3) {
+        int ret;
+
+        if (n < p1)
+                ret = 1;
+        else if (n > p1 && n < p2)
+                ret = 2;
+        else if (n > p2 && n < p3)
+                ret = 3;
+        else /* n > p3 */
+                ret = 4;
+
+        return ret;
+}
+
+static void
+name_mode(const char *chan, char *args) {
+        Channel *c;
+        Nick *n;
+        char *m, *p, *c1, *c2, *c3, *s, *mode;
+        int adding = 1;
+
+        if (!(c = channel_find(chan)))
+                return;
+
+        p = strtok(args, " ");
+        if (p == NULL) /* invalid arguments */
+                return;
+
+        p = strtok(NULL, " ");
+        if (p == NULL) /* none of the modes have arguments */
+                return;
+
+        m = strchr(args, ' ');
+        
+        mode = strndup(args, m - args);
+
+        /* find our comma delimiters. we can guarantee that all three
+         * will be here from the parsing of the 005 line. */
+        c1 = strchr(cmodes, ',');
+        c2 = strchr(c1 + 1, ',');
+        c3 = strchr(c2 + 1, ',');
+        
+        for (m = mode; *m; m++) {
+                switch (*m) {
+                case '+':
+                        adding = 1;
+                        break;
+                case '-':
+                        adding = 0;
+                        break;
+                default:
+                        if (((s = strchr(cmodes, *m)) != NULL) && *m != ',') {
+                                /* work out whether we need to skip arguments */
+                                switch (ptr_split(s, c1, c2, c3)) {
+                                case 1:
+                                case 2:
+                                        p = strtok(NULL, " ");
+                                        break;
+                                case 3: /* FALLTHROUGH */
+                                        if (adding)
+                                                p = strtok(NULL, " ");
+                                case 4:
+                                        break;
+                                }
+                        } else if ((s = strchr(umodes, *m)) != NULL) {
+                                if (p == NULL) /* jumped off a cliff?? */
+                                        goto end;
+
+                                n = name_find(c, p);
+                                if (n) {
+                                        if (adding &&
+                                            n->prefix == '\0')
+                                                n->prefix = upref[s - umodes];
+                                        else if (!adding &&
+                                                 (n->prefix == upref[s - umodes])) {
+                                                         n->prefix = '\0';
+                                        }
+                                }
+
+                                p = strtok(NULL, " ");
+                        }
+                        
+                        break;
+                }
+        }
+end:
+        free(mode);
+}
+
+static Nick *
+name_find(Channel *c, const char *name)
+{
+        Nick *n;
+
+        if (!c || !name)
+                return NULL;
+        
+	for (n = c->nicks; n; n = n->next) {
+		if (!strcmp(name, n->name))
+                        return n; /* found */
+	}
+	return NULL;
 }
 
 static int
@@ -554,6 +700,65 @@ channel_print(Channel *c, const char *buf)
 	fprintf(fp, "%lu %s\n", (unsigned long)t, buf);
 	fclose(fp);
 }
+
+static void
+cap_parse(char *buf) {
+        char *p;
+
+        p = strtok(buf, " ");
+        
+        while (p != NULL) {
+                if (!strncmp("PREFIX=", p, 7)) {
+                        p += 7;
+                        parse_prefix(p);
+                } else if (!strncmp("CHANMODES=", p, 10)) {
+                        p += 10;
+                        parse_cmodes(p);
+                }
+
+                p = strtok(NULL, " ");
+        }
+}
+
+static void
+parse_prefix(char *buf) {
+        char *m, *p;
+        size_t l, s;
+        int i;
+
+        /* validate the prefix string */
+        m = buf;
+        p = strchr(buf, ')');
+        l = strlen(buf);
+        if (l < 2 || *m != '(' || p == NULL || (p - m) * 2 != l)
+                return;
+
+        s = sizeof(upref);
+
+        for (i=0, m++, p++; *m != ')' && i != (s - 1); m++, p++, i++) {
+                umodes[i] = *m;
+                upref[i] = *p;
+        }
+}
+
+static void
+parse_cmodes(char *buf) {
+        char *p;
+        int n = 0;
+
+        /* validate the channel modes */
+        for (p = buf; *p; p++) {
+                if (*p == ',') {
+                        n++;
+                }
+        }
+
+        if (n < 3)
+                return;
+
+        strlcpy(cmodes, buf, sizeof(cmodes));
+}
+
 
 static void
 proc_channels_privmsg(int ircfd, Channel *c, char *buf)
@@ -696,7 +901,7 @@ proc_server_cmd(int fd, char *buf)
 	const char *channel;
 	char *argv[TOK_LAST], *cmd = NULL, *p = NULL;
         unsigned int i;
-        int isnotice = 0;
+        int isnotice = 0, isprivmsg = 0;
 
 	if (!buf || buf[0] == '\0')
 		return;
@@ -741,14 +946,19 @@ proc_server_cmd(int fd, char *buf)
 		snprintf(msg, sizeof(msg), "PONG %s\r\n", argv[TOK_TEXT]);
 		ewritestr(fd, msg);
                 return;
-	} else if(!strncmp("353", argv[TOK_CMD], 4)) {
+	} else if (!strncmp("353", argv[TOK_CMD], 4)) {
 		p = strtok(argv[TOK_ARG]," ");
 		if(!(p = strtok(NULL," ")))
 			return;
 		snprintf(msg, sizeof(msg), "%s%s", argv[TOK_ARG] ? argv[TOK_ARG] : "", argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
                 channel_print(channelmaster, msg);
 		proc_names(p, argv[TOK_TEXT]);
-		return;
+                return;
+        } else if (!strncmp("005", argv[TOK_CMD], 4)) {
+                /* the tokeniser doesn't split 005 lines properly */
+                cap_parse(argv[TOK_ARG]);
+                cap_parse(argv[TOK_TEXT]);
+                return;        
 	} else if (!argv[TOK_NICKSRV] || !argv[TOK_USER]) {
 		/* server command */
 		snprintf(msg, sizeof(msg), "%s%s",
@@ -777,7 +987,8 @@ proc_server_cmd(int fd, char *buf)
 				argv[TOK_NICKSRV],
 				argv[TOK_CHAN] ? argv[TOK_CHAN] : "",
 				argv[TOK_ARG]  ? argv[TOK_ARG] : "",
-				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                                argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                name_mode(argv[TOK_CHAN], argv[TOK_ARG]);
 	} else if (!strcmp("QUIT", argv[TOK_CMD])) {
 		snprintf(msg, sizeof(msg), "-!- %s(%s) has quit \"%s\"",
 				argv[TOK_NICKSRV], argv[TOK_USER],
@@ -808,9 +1019,8 @@ proc_server_cmd(int fd, char *buf)
                 isnotice = 1; /* this is a hack, as we need to know who/what
                                * we're sending to before we can format the
                                * message */
-	} else if (!strcmp("PRIVMSG", argv[TOK_CMD])) {
-		snprintf(msg, sizeof(msg), "<%s> %s", argv[TOK_NICKSRV],
-				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+        } else if (!strcmp("PRIVMSG", argv[TOK_CMD])) {
+                isprivmsg = 1; /* hack, as above. */
 	} else {
 		return; /* can't read this message */
 	}
@@ -820,13 +1030,23 @@ proc_server_cmd(int fd, char *buf)
                 if (isnotice)
                         snprintf(msg, sizeof(msg), "-!- \"%s\"",
                                  argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                else if (isprivmsg)
+                        snprintf(msg, sizeof(msg), "<%s> %s", argv[TOK_NICKSRV],
+                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
         } else {
                 channel = argv[TOK_CHAN];
-
+                Nick *n = name_find(channel_find(channel), argv[TOK_NICKSRV]);
+                
                 if (isnotice)
-                        snprintf(msg, sizeof(msg), "-!- %s/%s -> \"%s\"",
+                        snprintf(msg, sizeof(msg), "-!- %c%s/%s -> \"%s\"",
+                                 n ? &n->prefix : "",
                                  argv[TOK_NICKSRV] ? argv[TOK_NICKSRV] : "",
                                  channel, argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                else if (isprivmsg) {
+                        snprintf(msg, sizeof(msg), "<%s%s> %s", n ? &n->prefix : "",
+                                 argv[TOK_NICKSRV],
+                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                }
         }
 
 	if (!channel || channel[0] == '\0')
@@ -844,8 +1064,6 @@ proc_names(const char *chan, char *names) {
         if(!(p = strtok(names," ")))
                 return;
 	do {
-		if(*p == '@' || *p == '+')
-			p++;
 		name_add(chan,p);
 	} while((p = strtok(NULL," ")));
 }
@@ -908,7 +1126,12 @@ setup(void)
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sighandler;
 	sigaction(SIGTERM, &sa, NULL);
-	sigaction(SIGINT, &sa, NULL);
+        sigaction(SIGINT, &sa, NULL);
+
+        /* default values for prefixes and channel modes. rather
+         * arbitrary and may cause breakage... */
+        parse_prefix("(qaohv)~&@%+");
+        parse_cmodes("beI,k,l,imMnOPQRstVz");
 }
 
 static void
