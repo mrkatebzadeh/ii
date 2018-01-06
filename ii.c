@@ -57,7 +57,6 @@ static Channel * channel_add(const char *);
 static Channel * channel_find(const char *);
 static Channel * channel_join(const char *);
 static void      channel_leave(Channel *);
-static Channel * channel_lookup(const char *);
 static Channel * channel_new(const char *);
 static void      channel_normalize_name(char *);
 static void      channel_normalize_path(char *);
@@ -344,15 +343,6 @@ channel_leave(Channel *c)
 	channel_rm(c);
 }
 
-static Channel*
-channel_lookup(const char *name) {
-        Channel *c;
-	for(c = channels; c; c = c->next)
-		if(!strcmp(name, c->name))
-			return c;
-	return NULL;
-}
-
 static void
 loginkey(int ircfd, const char *key)
 {
@@ -374,7 +364,7 @@ name_add(const char *chan, const char *name) {
         Channel *c;
         Nick *n;
 
-        if(!(c = channel_lookup(chan)))
+        if(!(c = channel_find(chan)))
                 return;
 
         for(n = c->nicks; n; n = n->next)
@@ -400,7 +390,7 @@ name_rm(const char *chan, const char *name) {
 	Channel *c;
 	Nick *n, *pn = NULL;
 
-        if(!(c = channel_lookup(chan)))
+        if(!(c = channel_find(chan)))
                 return 0;
 
         for(n = c->nicks; n; pn = n, n = n->next) {
@@ -654,6 +644,16 @@ proc_channels_input(int ircfd, Channel *c, char *buf)
                         }
 			channel_leave(c);
 			return;
+                        break;
+                case 'o': /* notice */
+                        if (c == channelmaster)
+                                return;
+			if (buflen >= 3) {
+				snprintf(msg, sizeof(msg), "-!- -> \"%s\"", &buf[3]);
+				channel_print(c, msg);
+			}
+			if (buflen >= 3)
+				snprintf(msg, sizeof(msg), "NOTICE %s :%s\r\n", c->name, &buf[3]);
 			break;
 		case 'q': /* quit */
 			if (buflen >= 3)
@@ -695,7 +695,8 @@ proc_server_cmd(int fd, char *buf)
 	Channel *c;
 	const char *channel;
 	char *argv[TOK_LAST], *cmd = NULL, *p = NULL;
-	unsigned int i;
+        unsigned int i;
+        int isnotice = 0;
 
 	if (!buf || buf[0] == '\0')
 		return;
@@ -803,19 +804,30 @@ proc_server_cmd(int fd, char *buf)
 				argv[TOK_NICKSRV], argv[TOK_ARG],
                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
                 name_rm(argv[TOK_CHAN], argv[TOK_NICKSRV]);
-	} else if (!strcmp("NOTICE", argv[TOK_CMD])) {
-		snprintf(msg, sizeof(msg), "-!- \"%s\")",
-				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+        } else if (!strcmp("NOTICE", argv[TOK_CMD])) {
+                isnotice = 1; /* this is a hack, as we need to know who/what
+                               * we're sending to before we can format the
+                               * message */
 	} else if (!strcmp("PRIVMSG", argv[TOK_CMD])) {
 		snprintf(msg, sizeof(msg), "<%s> %s", argv[TOK_NICKSRV],
 				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
 	} else {
 		return; /* can't read this message */
 	}
-	if (argv[TOK_CHAN] && !strcmp(argv[TOK_CHAN], nick))
-		channel = argv[TOK_NICKSRV];
-	else
-		channel = argv[TOK_CHAN];
+        if (argv[TOK_CHAN] && !strcmp(argv[TOK_CHAN], nick)) {
+                channel = argv[TOK_NICKSRV];
+
+                if (isnotice)
+                        snprintf(msg, sizeof(msg), "-!- \"%s\"",
+                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+        } else {
+                channel = argv[TOK_CHAN];
+
+                if (isnotice)
+                        snprintf(msg, sizeof(msg), "-!- %s/%s -> \"%s\"",
+                                 argv[TOK_NICKSRV] ? argv[TOK_NICKSRV] : "",
+                                 channel, argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+        }
 
 	if (!channel || channel[0] == '\0')
 		c = channelmaster;
