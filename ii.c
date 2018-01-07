@@ -113,8 +113,6 @@ static char     upref[UMODE_MAX];  /* user prefixes in use on this server */
 static char     umodes[UMODE_MAX]; /* modes corresponding to the prefixes */
 static char     cmodes[CMODE_MAX]; /* channel modes in use on this server */
 
-#define DPRINTF(s) printf s
-
 static void
 usage(void)
 {
@@ -959,8 +957,8 @@ proc_server_cmd(int fd, char *buf)
                 cap_parse(argv[TOK_ARG]);
                 cap_parse(argv[TOK_TEXT]);
                 return;        
-	} else if (!argv[TOK_NICKSRV] || !argv[TOK_USER]) {
-		/* server command */
+        } else if ((!argv[TOK_NICKSRV] || !argv[TOK_USER]) && strcmp("MODE", argv[TOK_CMD])) {
+		/* server command, but servers can set modes  */
 		snprintf(msg, sizeof(msg), "%s%s",
 				argv[TOK_ARG] ? argv[TOK_ARG] : "",
 				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
@@ -1038,7 +1036,7 @@ proc_server_cmd(int fd, char *buf)
                 Nick *n = name_find(channel_find(channel), argv[TOK_NICKSRV]);
                 
                 if (isnotice)
-                        snprintf(msg, sizeof(msg), "-!- %c%s/%s -> \"%s\"",
+                        snprintf(msg, sizeof(msg), "-!- %s%s/%s -> \"%s\"",
                                  n ? &n->prefix : "",
                                  argv[TOK_NICKSRV] ? argv[TOK_NICKSRV] : "",
                                  channel, argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
