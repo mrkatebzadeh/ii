@@ -381,10 +381,17 @@ static void
 name_add3(const char *chan, const char *name, const char modes) {
         Channel *c;
         Nick *n;
+        const char *p;
 
         if(!(c = channel_find(chan)))
                 return;
 
+        p = name;
+        if (strchr(upref, p[0]) != NULL) {
+                name++;
+        }
+
+        
         for(n = c->nicks; n; n = n->next)
                 if(!strcmp(name, n->name))
                         return;
@@ -394,9 +401,9 @@ name_add3(const char *chan, const char *name, const char modes) {
 		exit(1);
 	}
 
-        if (strchr(upref, name[0]) != NULL) { /* special people get prefix chars */
-                n->prefix = name[0];
-                name++;
+        if (trackprefix && p != name) {
+                /* special people get prefix chars */
+                n->prefix = *p;
         } else {
                 n->prefix = modes;
         }
@@ -963,7 +970,7 @@ proc_server_cmd(int fd, char *buf)
 				argv[TOK_ARG]  ? argv[TOK_ARG] : "",
                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
                 if (trackprefix) name_mode(argv[TOK_CHAN], argv[TOK_ARG]);
-        } else if (!strncmp("005", argv[TOK_CMD], 4) && trackprefix) {
+        } else if (!strncmp("005", argv[TOK_CMD], 4)) {
                 /* the tokeniser doesn't split 005 lines properly */
                 cap_parse(argv[TOK_ARG]);
                 cap_parse(argv[TOK_TEXT]);
@@ -1133,12 +1140,12 @@ setup(void)
 	sigaction(SIGTERM, &sa, NULL);
         sigaction(SIGINT, &sa, NULL);
 
-        /* default values for prefixes and channel modes. rather
-         * arbitrary and may cause breakage... */
-        if (trackprefix) {
-                parse_prefix("(qaohv)~&@%+");
-                parse_cmodes("beI,k,l,imMnOPQRstVz");
-        }
+        /* default values for prefixes and channel modes. these need
+         * to be tracked regardless of whether we're keeping track of
+         * people's modes, because we still need to know what the prefix
+         * chars so we can skip them. */
+        parse_prefix("(qaohv)~&@%+");
+        parse_cmodes("beI,k,l,imMnOPQRstVz");
 }
 
 static void
