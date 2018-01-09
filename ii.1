@@ -21,6 +21,8 @@ and ii creates a new channel directory with in and out file.
 .IR servername >
 .RB [ \-t
 .IR ]
+.RB [ \-P
+.IR ]
 .RB [ \-p
 .IR port ]
 .RB [ \-k
@@ -42,6 +44,9 @@ server to connect to, for example: irc.freenode.net
 .TP
 .BI \-t
 assume that ii is running under an UCSPI-compatible client instead of making a TCP connection.
+.TP
+.BI \-P
+disable tracking of users' prefix characters
 .TP
 .BI \-U " sockname"
 connect to a UNIX domain socket instead of directly to a server.

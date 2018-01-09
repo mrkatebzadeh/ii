@@ -109,16 +109,20 @@ static char     nick[32];          /* active nickname at runtime */
 static char     _nick[32];         /* nickname at startup */
 static char     ircpath[PATH_MAX]; /* irc dir (-i) */
 static char     msg[IRC_MSG_MAX];  /* message buf used for communication */
+static int      trackprefix = 1;   /* flag to track user prefixes */
 static char     upref[UMODE_MAX];  /* user prefixes in use on this server */
 static char     umodes[UMODE_MAX]; /* modes corresponding to the prefixes */
 static char     cmodes[CMODE_MAX]; /* channel modes in use on this server */
 
+#define DPRINTF(s, ...) fprintf(stderr, "DEBUG: " s "\n", ##__VA_ARGS__)
+
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: %s <-s host> [-t] [-i <irc dir>] [-p <port>] "
-                "[-U <sockname>] [-n <nick>] [-k <password>] [-u <username>] "
-                "[-f <fullname>]\n", argv0);
+        fprintf(stderr, "usage: %s <-s host> [-t] [-P] [-i <irc dir>] "
+                "[-p <port>] [-U <sockname>] [-n <nick>] [-k <password>] "
+                "[-u <username>] [-f <fullname>]\n",
+                argv0);
 	exit(1);
 }
 
@@ -428,7 +432,7 @@ name_rm3(Channel *c, const char *name, char *prefix) {
 	Nick *n, *pn = NULL;
 
         for(n = c->nicks; n; pn = n, n = n->next) {
-		if(!strcmp(name, n->name)) {
+                if(!strcmp(name, n->name)) {
                         if(pn)
                                 pn->next = n->next;
                         else
@@ -944,20 +948,27 @@ proc_server_cmd(int fd, char *buf)
 		snprintf(msg, sizeof(msg), "PONG %s\r\n", argv[TOK_TEXT]);
 		ewritestr(fd, msg);
                 return;
-	} else if (!strncmp("353", argv[TOK_CMD], 4)) {
+        } else if (!strncmp("353", argv[TOK_CMD], 4)) {
 		p = strtok(argv[TOK_ARG]," ");
 		if(!(p = strtok(NULL," ")))
 			return;
 		snprintf(msg, sizeof(msg), "%s%s", argv[TOK_ARG] ? argv[TOK_ARG] : "", argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
                 channel_print(channelmaster, msg);
-		proc_names(p, argv[TOK_TEXT]);
+                proc_names(p, argv[TOK_TEXT]);
                 return;
-        } else if (!strncmp("005", argv[TOK_CMD], 4)) {
+	} else if (!strcmp("MODE", argv[TOK_CMD])) {
+		snprintf(msg, sizeof(msg), "-!- %s changed mode/%s -> %s %s",
+				argv[TOK_NICKSRV],
+				argv[TOK_CHAN] ? argv[TOK_CHAN] : "",
+				argv[TOK_ARG]  ? argv[TOK_ARG] : "",
+                                argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                if (trackprefix) name_mode(argv[TOK_CHAN], argv[TOK_ARG]);
+        } else if (!strncmp("005", argv[TOK_CMD], 4) && trackprefix) {
                 /* the tokeniser doesn't split 005 lines properly */
                 cap_parse(argv[TOK_ARG]);
                 cap_parse(argv[TOK_TEXT]);
                 return;        
-        } else if ((!argv[TOK_NICKSRV] || !argv[TOK_USER]) && strcmp("MODE", argv[TOK_CMD])) {
+        } else if (!argv[TOK_NICKSRV] || !argv[TOK_USER]) {
 		/* server command, but servers can set modes  */
 		snprintf(msg, sizeof(msg), "%s%s",
 				argv[TOK_ARG] ? argv[TOK_ARG] : "",
@@ -980,13 +991,6 @@ proc_server_cmd(int fd, char *buf)
 		/* if user itself leaves, don't write to channel (don't reopen channel). */
 		if (!strcmp(argv[TOK_NICKSRV], nick))
 			return;
-	} else if (!strcmp("MODE", argv[TOK_CMD])) {
-		snprintf(msg, sizeof(msg), "-!- %s changed mode/%s -> %s %s",
-				argv[TOK_NICKSRV],
-				argv[TOK_CHAN] ? argv[TOK_CHAN] : "",
-				argv[TOK_ARG]  ? argv[TOK_ARG] : "",
-                                argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
-                name_mode(argv[TOK_CHAN], argv[TOK_ARG]);
 	} else if (!strcmp("QUIT", argv[TOK_CMD])) {
 		snprintf(msg, sizeof(msg), "-!- %s(%s) has quit \"%s\"",
 				argv[TOK_NICKSRV], argv[TOK_USER],
@@ -1033,7 +1037,10 @@ proc_server_cmd(int fd, char *buf)
                                  argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
         } else {
                 channel = argv[TOK_CHAN];
-                Nick *n = name_find(channel_find(channel), argv[TOK_NICKSRV]);
+                Nick *n = NULL;
+
+                if (trackprefix)
+                        n= name_find(channel_find(channel), argv[TOK_NICKSRV]);
                 
                 if (isnotice)
                         snprintf(msg, sizeof(msg), "-!- %s%s/%s -> \"%s\"",
@@ -1128,8 +1135,10 @@ setup(void)
 
         /* default values for prefixes and channel modes. rather
          * arbitrary and may cause breakage... */
-        parse_prefix("(qaohv)~&@%+");
-        parse_cmodes("beI,k,l,imMnOPQRstVz");
+        if (trackprefix) {
+                parse_prefix("(qaohv)~&@%+");
+                parse_cmodes("beI,k,l,imMnOPQRstVz");
+        }
 }
 
 static void
@@ -1230,6 +1239,9 @@ main(int argc, char *argv[])
                 break;
         case 't':
                 ucspi = 1;
+                break;
+        case 'P':
+                trackprefix = 0;
                 break;
 	default:
 		usage();
