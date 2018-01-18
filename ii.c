@@ -842,8 +842,8 @@ proc_channels_input(int ircfd, Channel *c, char *buf)
 			else
 				snprintf(msg, sizeof(msg),
                                          "PART %s :leaving\r\n", c->name);
-                        if ((buf[3] == '#') || (buf[3] == '&') ||
-                            (buf[3] == '+') || (buf[3] == '!')) {
+                        if ((c->name[0] == '#') || (c->name[0] == '&') ||
+                            (c->name[0] == '+') || (c->name[0] == '!')) {
                                     ewritestr(ircfd, msg);
                                     if (buflen >= 3) {
                                             snprintf(msg, sizeof(msg),
