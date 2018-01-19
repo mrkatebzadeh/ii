@@ -73,14 +73,13 @@ static void      create_filepath(char *, size_t, const char *, const char *, con
 static void      ewritestr(int, const char *);
 static void      handle_channels_input(int, Channel *);
 static void      handle_server_output(int, int);
-static int       isnumeric(const char *);
 static void      loginkey(int, const char *);
 static void      loginuser(int, const char *, const char *, const char *);
 #define name_add(c, n) name_add3((c), (n), '\0')
 static void      name_add3(const char *, const char *, const char);
 static Nick *    name_find(Channel *, const char *);
 static void      name_menick(const char *, const char *);
-static void      name_mode(const char *, char *);
+static void      name_mode(const char *, char *, char *);
 static void      name_nick(const char *, const char *);
 static void      name_quit(const char *, const char *, const char *);
 static int       name_rm(const char *, const char *);
@@ -114,7 +113,6 @@ static char     upref[UMODE_MAX];  /* user prefixes in use on this server */
 static char     umodes[UMODE_MAX]; /* modes corresponding to the prefixes */
 static char     cmodes[CMODE_MAX]; /* channel modes in use on this server */
 
-#define DPRINTF(s, ...) fprintf(stderr, "DEBUG: " s "\n", ##__VA_ARGS__)
 
 static void
 usage(void)
@@ -511,26 +509,21 @@ ptr_split(const char *n, const char *p1, const char *p2, const char *p3) {
 }
 
 static void
-name_mode(const char *chan, char *args) {
+name_mode(const char *chan, char *mode, char *args) {
         Channel *c;
         Nick *n;
-        char *m, *p, *c1, *c2, *c3, *s, *mode;
+        char *m, *p, *c1, *c2, *c3, *s;
         int adding = 1;
 
         if (!(c = channel_find(chan)))
                 return;
 
-        p = strtok(args, " ");
-        if (p == NULL) /* invalid arguments */
+        if (!mode) /* invalid arguments */
                 return;
 
-        p = strtok(NULL, " ");
+        p = strtok(args, " ");
         if (p == NULL) /* none of the modes have arguments */
                 return;
-
-        m = strchr(args, ' ');
-        
-        mode = strndup(args, m - args);
 
         /* find our comma delimiters. we can guarantee that all three
          * will be here from the parsing of the 005 line. */
@@ -562,7 +555,7 @@ name_mode(const char *chan, char *args) {
                                 }
                         } else if ((s = strchr(umodes, *m)) != NULL) {
                                 if (p == NULL) /* jumped off a cliff?? */
-                                        goto end;
+                                        return;
 
                                 n = name_find(c, p);
                                 if (n) {
@@ -581,8 +574,6 @@ name_mode(const char *chan, char *args) {
                         break;
                 }
         }
-end:
-        free(mode);
 }
 
 static Nick *
@@ -662,14 +653,6 @@ tcpopen(const char *host, const char *service)
 	return fd;
 }
 
-static int
-isnumeric(const char *s)
-{
-	errno = 0;
-	strtol(s, NULL, 10);
-	return errno == 0;
-}
-
 static size_t
 tokenize(char **result, size_t reslen, char *str, int delim)
 {
@@ -682,7 +665,7 @@ tokenize(char **result, size_t reslen, char *str, int delim)
 	while (*n != '\0') {
 		if (i >= reslen)
 			return 0;
-		if (i > TOK_CHAN - TOK_CMD && result[0] && isnumeric(result[0]))
+		if (i > TOK_CHAN - TOK_CMD && result[0] && strtol(result[0], NULL, 10) > 0)
 			delim = ':'; /* workaround non-RFC compliant messages */
 		if (*n == delim) {
 			*n = '\0';
@@ -969,7 +952,7 @@ proc_server_cmd(int fd, char *buf)
 				argv[TOK_CHAN] ? argv[TOK_CHAN] : "",
 				argv[TOK_ARG]  ? argv[TOK_ARG] : "",
                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
-                if (trackprefix) name_mode(argv[TOK_CHAN], argv[TOK_ARG]);
+                if (trackprefix) name_mode(argv[TOK_CHAN], argv[TOK_ARG], argv[TOK_TEXT]);
         } else if (!strncmp("005", argv[TOK_CMD], 4)) {
                 /* the tokeniser doesn't split 005 lines properly */
                 cap_parse(argv[TOK_ARG]);
