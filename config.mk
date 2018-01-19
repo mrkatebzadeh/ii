@@ -9,7 +9,7 @@ MAN1DIR  = ${MANDIR}/man1
 DOCDIR   = ${PREFIX}/share/doc/ii
 
 # includes and libs
-INCLUDES = -I. -I/usr/include
+INCLUDES =
 LIBS     =
 
 # compiler
