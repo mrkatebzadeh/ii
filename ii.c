@@ -755,7 +755,13 @@ parse_cmodes(char *buf) {
 static void
 proc_channels_privmsg(int ircfd, Channel *c, char *buf)
 {
-	snprintf(msg, sizeof(msg), "<%s> %s", nick, buf);
+        Nick *n = NULL;
+
+        if (trackprefix)
+                n = name_find(c, nick);
+
+        snprintf(msg, sizeof(msg), "<%s%s> %s",
+                 n ? &n->prefix : "", nick, buf);
 	channel_print(c, msg);
 	snprintf(msg, sizeof(msg), "PRIVMSG %s :%s\r\n", c->name, buf);
 	ewritestr(ircfd, msg);
@@ -1030,7 +1036,7 @@ proc_server_cmd(int fd, char *buf)
                 Nick *n = NULL;
 
                 if (trackprefix)
-                        n= name_find(channel_find(channel), argv[TOK_NICKSRV]);
+                        n = name_find(channel_find(channel), argv[TOK_NICKSRV]);
                 
                 if (isnotice)
                         snprintf(msg, sizeof(msg), "-!- %s%s/%s -> \"%s\"",
