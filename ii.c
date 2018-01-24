@@ -968,7 +968,7 @@ proc_server_cmd(int fd, char *buf)
 		snprintf(msg, sizeof(msg), "-!- %s kicked %s (\"%s\")",
 				argv[TOK_NICKSRV], argv[TOK_ARG],
                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
-                name_rm(argv[TOK_CHAN], argv[TOK_NICKSRV]);
+                name_rm(argv[TOK_CHAN], argv[TOK_ARG]);
         } else if (!argv[TOK_NICKSRV] || !argv[TOK_USER]) {
                 /* server message */
 		snprintf(msg, sizeof(msg), "%s%s",
