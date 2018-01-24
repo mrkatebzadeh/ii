@@ -952,20 +952,25 @@ proc_server_cmd(int fd, char *buf)
                 channel_print(channelmaster, msg);
                 proc_names(p, argv[TOK_TEXT]);
                 return;
-	} else if (!strcmp("MODE", argv[TOK_CMD])) {
+        } else if (!strncmp("005", argv[TOK_CMD], 4)) {
+                /* the tokeniser doesn't split 005 lines properly */
+                cap_parse(argv[TOK_ARG]);
+                cap_parse(argv[TOK_TEXT]);
+                return;
+        } else if (!strcmp("MODE", argv[TOK_CMD])) { /* servers can send channel MODEs and KICKs */
 		snprintf(msg, sizeof(msg), "-!- %s changed mode/%s -> %s %s",
 				argv[TOK_NICKSRV],
 				argv[TOK_CHAN] ? argv[TOK_CHAN] : "",
 				argv[TOK_ARG]  ? argv[TOK_ARG] : "",
                                 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
                 if (trackprefix) name_mode(argv[TOK_CHAN], argv[TOK_ARG], argv[TOK_TEXT]);
-        } else if (!strncmp("005", argv[TOK_CMD], 4)) {
-                /* the tokeniser doesn't split 005 lines properly */
-                cap_parse(argv[TOK_ARG]);
-                cap_parse(argv[TOK_TEXT]);
-                return;        
+	} else if (!strcmp("KICK", argv[TOK_CMD]) && argv[TOK_ARG]) {
+		snprintf(msg, sizeof(msg), "-!- %s kicked %s (\"%s\")",
+				argv[TOK_NICKSRV], argv[TOK_ARG],
+                                argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+                name_rm(argv[TOK_CHAN], argv[TOK_NICKSRV]);
         } else if (!argv[TOK_NICKSRV] || !argv[TOK_USER]) {
-		/* server command, but servers can set modes  */
+                /* server message */
 		snprintf(msg, sizeof(msg), "%s%s",
 				argv[TOK_ARG] ? argv[TOK_ARG] : "",
 				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
@@ -1008,11 +1013,6 @@ proc_server_cmd(int fd, char *buf)
 		snprintf(msg, sizeof(msg), "-!- %s changed topic to \"%s\"",
 				argv[TOK_NICKSRV],
 				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
-	} else if (!strcmp("KICK", argv[TOK_CMD]) && argv[TOK_ARG]) {
-		snprintf(msg, sizeof(msg), "-!- %s kicked %s (\"%s\")",
-				argv[TOK_NICKSRV], argv[TOK_ARG],
-                                argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
-                name_rm(argv[TOK_CHAN], argv[TOK_NICKSRV]);
         } else if (!strcmp("NOTICE", argv[TOK_CMD])) {
                 isnotice = 1; /* this is a hack, as we need to know who/what
                                * we're sending to before we can format the
