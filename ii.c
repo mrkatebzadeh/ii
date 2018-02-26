@@ -986,8 +986,9 @@ proc_server_cmd(int fd, char *buf)
                          argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
                 name_add(argv[TOK_CHAN], argv[TOK_NICKSRV]);
         } else if (!strcmp("PART", argv[TOK_CMD]) && argv[TOK_CHAN]) {
-                snprintf(msg, sizeof(msg), "-!- %s(%s) has left %s",
-                         argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
+		snprintf(msg, sizeof(msg), "-!- %s(%s) has left %s: \"%s\"",
+			 argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN],
+			 argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
                 name_rm(argv[TOK_CHAN], argv[TOK_NICKSRV]);
 		/* if user itself leaves, don't write to channel (don't reopen channel). */
 		if (!strcmp(argv[TOK_NICKSRV], nick))
