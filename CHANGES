@@ -1,3 +1,18 @@
+multiplexd's patches (see commit log):
+    - rebase and import UCSPI patch into master.
+    - import the username tracking patch for ii 1.4.
+    - allow starting /queries with /j <nick> and no message.
+    - various miscellaneous tweaks to logging output to log nick changes,
+      parts, joins, and quits in the appropriate channels.
+    - better handling of NOTICEs.
+    - parse server MODE lines.
+    - basic tracking of user modes and prefix characters.
+    - allow the IRC username to be set on the command line.
+    - don't try to include /usr/include when building, as we may be building
+      using a different libc.
+    - handle servers sending channel kicks correctly.
+    - print user's own prefix character if they have one.
+
 1.8 (2018-02-04):
     - prevent nick collisions by only setting the nick after the server
       accepted it and print a message about change to server log.
