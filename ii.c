@@ -457,7 +457,7 @@ name_quit(const char *name, const char *user, const char *text) {
 	Channel *c;
 
         for(c = channels; c; c = c->next) {
-		if(c->name && name_rm3(c, name, NULL)) {
+		if(*c->name && name_rm3(c, name, NULL)) {
 			snprintf(msg, sizeof(msg), "-!- %s(%s) has quit \"%s\"", name, user, text ? text : "");
 			channel_print(c, msg);
 		}
@@ -470,7 +470,7 @@ name_nick(const char *old, const char *new) {
         char tmp;
 
         for(c = channels; c; c = c->next) {
-                if(c->name && name_rm3(c, old, &tmp)) {
+		if(*c->name && name_rm3(c, old, &tmp)) {
 			name_add3(c->name, new, tmp);
 			snprintf(msg, sizeof(msg), "-!- %s changed nick to \"%s\"", old, new);
 			channel_print(c, msg);
@@ -486,7 +486,7 @@ name_menick(const char* old, const char *new) {
         snprintf(msg, sizeof(msg), "-!- changed nick to \"%s\"", new);
 
         for(c = channels; c; c = c->next) {
-                if(c->name && name_rm3(c, old, &tmp)) {
+		if(*c->name && name_rm3(c, old, &tmp)) {
 			name_add3(c->name, new, tmp);
 		}
                 channel_print(c, msg);
