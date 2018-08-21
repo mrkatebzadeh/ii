@@ -2,24 +2,14 @@
 VERSION = 1.8
 
 # paths
-PREFIX   = /usr/local
-BINDIR   = ${PREFIX}/bin
-MANDIR   = ${PREFIX}/share/man
-MAN1DIR  = ${MANDIR}/man1
-DOCDIR   = ${PREFIX}/share/doc/ii
+PREFIX    = /usr/local
+MANPREFIX = ${PREFIX}/share/man
+DOCPREFIX = ${PREFIX}/share/doc
 
-# includes and libs
-INCLUDES =
-LIBS     =
+# on systems which provide strlcpy(3),
+# remove NEED_STRLCPY from CFLAGS and
+# remove strlcpy.o from LIBS
+CFLAGS   = -DNEED_STRLCPY -Os
+LDFLAGS  = -s
+LIBS     = strlcpy.o
 
-# compiler
-CC       = cc
-
-# debug
-#CFLAGS  = -g -O0 -pedantic -Wall ${INCLUDES} -DVERSION=\"${VERSION}\" \
-#	-std=c99 -D_DEFAULT_SOURCE
-#LDFLAGS = ${LIBS}
-
-# release
-CFLAGS   = -Os ${INCLUDES} -DVERSION=\"${VERSION}\" -std=c99 -D_DEFAULT_SOURCE
-LDFLAGS  = -s ${LIBS}
