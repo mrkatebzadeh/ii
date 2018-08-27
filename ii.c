@@ -668,7 +668,7 @@ tokenize(char **result, size_t reslen, char *str, int delim)
 			return 0;
 		if (i > TOK_CHAN - TOK_CMD && result[0] && strtol(result[0], NULL, 10) > 0)
 			delim = ':'; /* workaround non-RFC compliant messages */
-		if (*n == delim) {
+                if (i < TOK_TEXT - TOK_CMD && *n == delim) {
 			*n = '\0';
 			result[i++] = p;
 			p = ++n;
