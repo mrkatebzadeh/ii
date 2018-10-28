@@ -189,7 +189,7 @@ channel_normalize_name(char *s)
 		s++;
 	for (p = s; *s; s++) {
 		if (!strchr(" ,&#\x07", *s)) {
-			*p = *s;
+			*p = isalpha(*s) ? tolower(*s) : *s;
 			p++;
 		}
 	}

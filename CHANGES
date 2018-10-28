@@ -12,6 +12,8 @@ multiplexd's patches (see commit log):
       using a different libc.
     - handle servers sending channel kicks correctly.
     - print user's own prefix character if they have one.
+    - internally normalise channel names to lowercase for alphabetical
+      characters
 
 1.8 (2018-02-04):
     - prevent nick collisions by only setting the nick after the server
