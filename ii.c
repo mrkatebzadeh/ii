@@ -185,9 +185,14 @@ channel_normalize_name(char *s)
 {
 	char *p;
 
-	while (*s == '&' || *s == '#')
+	/* advance over the channel prefix char (&#) and any possible prefix
+	 * characters if we have received a message for opers
+	 * (e.g. NOTICE @#chan :hey ops) */
+        while (*s == '&' || *s == '#' || strchr(upref, s[0]) != NULL)
 		s++;
 	for (p = s; *s; s++) {
+		/* sanitise the channel name of invalid chars and downcase
+		 * alphanumerics */
 		if (!strchr(" ,&#\x07", *s)) {
 			*p = isalpha(*s) ? tolower(*s) : *s;
 			p++;
