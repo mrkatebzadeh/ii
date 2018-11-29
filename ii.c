@@ -396,9 +396,18 @@ name_add3(const char *chan, const char *name, const char modes) {
         }
 
         
-        for(n = c->nicks; n; n = n->next)
-                if(!strcmp(name, n->name))
-                        return;
+        for(n = c->nicks; n; n = n->next) {
+		if(!strcmp(name, n->name)) {
+			/* name already exists in the channel, but twiddle prefix
+			 * characters in case they've changed without us knowing.
+			 * this also means that /NAMES can be used to reset nick
+			 * state if we get confused. */
+			if (trackprefix && p != name) {
+				n->prefix = *p;
+			}
+			return;
+		}
+	}
 
         if (!(n = calloc(1, sizeof(Nick)))) {
 		fprintf(stderr, "%s: calloc: %s\n", argv0, strerror(errno));
