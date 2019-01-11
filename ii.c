@@ -987,9 +987,13 @@ proc_server_cmd(int fd, char *buf)
                 if (trackprefix) name_mode(argv[TOK_CHAN], argv[TOK_ARG], argv[TOK_TEXT]);
 	} else if (!strcmp("KICK", argv[TOK_CMD]) && argv[TOK_ARG]) {
 		snprintf(msg, sizeof(msg), "-!- %s kicked %s (\"%s\")",
-				argv[TOK_NICKSRV], argv[TOK_ARG],
-                                argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
-                name_rm(argv[TOK_CHAN], argv[TOK_ARG]);
+			 	argv[TOK_NICKSRV], argv[TOK_ARG],
+			 	argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+		name_rm(argv[TOK_CHAN], argv[TOK_ARG]);
+	} else if (!strcmp("TOPIC", argv[TOK_CMD])) { /* servers can also send TOPIC lines (cf. recovering from netsplit) */
+		snprintf(msg, sizeof(msg), "-!- %s changed topic to \"%s\"",
+				argv[TOK_NICKSRV],
+				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
         } else if (!argv[TOK_NICKSRV] || !argv[TOK_USER]) {
                 /* server message */
 		snprintf(msg, sizeof(msg), "%s%s",
@@ -1031,10 +1035,6 @@ proc_server_cmd(int fd, char *buf)
                          argv[TOK_NICKSRV], argv[TOK_TEXT]);
                 name_nick(argv[TOK_NICKSRV], argv[TOK_TEXT]);
                 return;
-	} else if (!strcmp("TOPIC", argv[TOK_CMD])) {
-		snprintf(msg, sizeof(msg), "-!- %s changed topic to \"%s\"",
-				argv[TOK_NICKSRV],
-				argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
         } else if (!strcmp("NOTICE", argv[TOK_CMD])) {
                 isnotice = 1; /* this is a hack, as we need to know who/what
                                * we're sending to before we can format the
